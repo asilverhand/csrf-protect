@@ -1,7 +1,7 @@
 {
   "name": "csrf-protect",
   "description": "CSRF token middleware for ExpressJS",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "license": "MIT",
   "repository": "github:asilverhand/csrf-protect",
   "bugs": {
