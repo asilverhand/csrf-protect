@@ -115,7 +115,7 @@ function verifyConfiguration(req, sessionKey, cookie) {
   return true;
 }
 
-export function csurf(options) {
+function csrfProtect(options) {
   const opts = options || {};
 
   // get cookie options
@@ -195,3 +195,5 @@ export function csurf(options) {
     return next();
   };
 }
+
+module.exports = csrfProtect;
