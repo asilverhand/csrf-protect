@@ -1,9 +1,8 @@
-const Cookie = require('cookie');
 const createError = require('http-errors');
 const { sign } = require('cookie-signature');
 const Tokens = require('./tokens');
 
-function getCookieOptions(options) {
+function getProtectOption(options) {
   if (options !== true && typeof options !== "object") {
     return undefined;
   }
@@ -45,12 +44,9 @@ function getIgnoredMethods(methods) {
   return obj;
 }
 
-function getSecretBag(req, sessionKey, cookie) {
+function getSecretBag(req, sessionKey, protect) {
   const csrfToken = req.headers?.xcsrf;
   if (csrfToken) {
-    // get secret from cookie
-    const cookieKey = cookie.signed ? "signedCookies" : "cookies";
-
     return {
       xcsrf: csrfToken,
     };
@@ -61,10 +57,10 @@ function getSecretBag(req, sessionKey, cookie) {
   };
 }
 
-function getSecret(req, sessionKey, cookie) {
+function getSecret(req, sessionKey, protect) {
   // get the bag & key
-  const bag = getSecretBag(req, sessionKey, cookie);
-  const key = cookie ? cookie.key : "csrfSecret";
+  const bag = getSecretBag(req, sessionKey, protect);
+  const key = protect ? protect.key : "csrfSecret";
 
   if (!bag) {
     throw new Error("misconfigured csrf");
@@ -74,41 +70,35 @@ function getSecret(req, sessionKey, cookie) {
   return bag[key];
 }
 
-function setCookie(
+function setHeaderSecret(
   res,
-  name,
   val,
-  options
 ) {
-  const data = Cookie.serialize(name, val, options);
-
-  const prev = res.getHeader("set-cookie") || [];
-  const header = Array.isArray(prev) ? prev.concat(data) : [prev, data];
-  res.setHeader("xcrf", String(header));
+  res.setHeader("xcsrf", String(val));
 }
 
-function setSecret(req, res, sessionKey, val, cookie) {
-  if (cookie) {
-    // set secret on cookie
+function setSecret(req, res, sessionKey, val, secret) {
+  if (secret) {
+    // set secret on secret
     let value = val;
 
-    if (cookie.signed) {
+    if (secret.signed) {
       value = `s:${sign(val, req.secret)}`;
     }
 
-    setCookie(res, cookie.key, value, cookie);
+    setHeaderSecret(res, value);
   } else {
     // set secret on session
     req[sessionKey].csrfSecret = val;
   }
 }
 
-function verifyConfiguration(req, sessionKey, cookie) {
-  if (!getSecretBag(req, sessionKey, cookie)) {
+function verifyConfiguration(req, sessionKey, secret) {
+  if (!getSecretBag(req, sessionKey, secret)) {
     return false;
   }
 
-  if (cookie && cookie.signed && !req.secret) {
+  if (secret && secret.signed && !req.secret) {
     return false;
   }
 
@@ -118,8 +108,8 @@ function verifyConfiguration(req, sessionKey, cookie) {
 function csrfProtect(options) {
   const opts = options || {};
 
-  // get cookie options
-  const cookie = getCookieOptions(opts.cookie);
+  // get protect options
+  const protect = getProtectOption(opts.protect);
 
   // get session options
   const sessionKey = opts.sessionKey || "session";
@@ -145,17 +135,17 @@ function csrfProtect(options) {
 
   return function csrf(req, res, next) {
     // validate the configuration against request
-    if (!verifyConfiguration(req, sessionKey, cookie)) {
+    if (!verifyConfiguration(req, sessionKey, protect)) {
       return next(new Error("misconfigured csrf"));
     }
 
     // get the secret from the request
-    let secret = getSecret(req, sessionKey, cookie);
+    let secret = getSecret(req, sessionKey, protect);
     let token;
 
     // lazy-load token getter
     req.csrfToken = function csrfToken() {
-      let sec = !cookie ? getSecret(req, sessionKey, cookie) : secret;
+      let sec = !protect ? getSecret(req, sessionKey, protect) : secret;
 
       // use cached token if secret has not changed
       if (token && sec === secret) {
@@ -165,7 +155,7 @@ function csrfProtect(options) {
       // generate & set new secret
       if (sec === undefined) {
         sec = tokens.secretSync();
-        setSecret(req, res, sessionKey, sec, cookie);
+        setSecret(req, res, sessionKey, sec, protect);
       }
 
       // update changed secret
@@ -180,7 +170,7 @@ function csrfProtect(options) {
     // generate & set secret
     if (!secret) {
       secret = tokens.secretSync();
-      setSecret(req, res, sessionKey, secret, cookie);
+      setSecret(req, res, sessionKey, secret, protect);
     }
 
     // verify the incoming token
