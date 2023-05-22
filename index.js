@@ -134,6 +134,9 @@ function csrfProtect(options) {
   const ignoreMethod = getIgnoredMethods(ignoreMethods);
 
   return function csrf(req, res, next) {
+    if (!req.headers?.platform || req.headers?.platform !== 'web') {
+      return next();
+    }
     // validate the configuration against request
     if (!verifyConfiguration(req, sessionKey, protect)) {
       return next(new Error("misconfigured csrf"));
